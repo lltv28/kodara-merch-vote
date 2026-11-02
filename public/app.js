@@ -34,3 +34,19 @@ f.addEventListener('submit', async (e) => {
     update();
   }
 });
+
+const lb = document.getElementById('lightbox');
+const lbImg = lb.querySelector('img');
+let opener;
+f.addEventListener('click', (e) => {
+  const btn = e.target.closest('.zoom');
+  if (!btn) return;
+  e.preventDefault(); // keep the card's checkbox untouched
+  const img = btn.parentElement.querySelector('img');
+  lbImg.src = img.src;
+  lbImg.alt = img.alt;
+  opener = btn;
+  lb.showModal();
+});
+lb.addEventListener('click', (e) => { if (e.target !== lbImg) lb.close(); });
+lb.addEventListener('close', () => opener && opener.focus());
