@@ -1,0 +1,13 @@
+services:
+  - type: web
+    name: kodara-merch-vote
+    runtime: node
+    plan: free
+    buildCommand: npm ci
+    startCommand: node server.js
+    healthCheckPath: /healthz
+    envVars:
+      - key: ADMIN_TOKEN
+        sync: false
+      - key: DATABASE_URL
+        sync: false
