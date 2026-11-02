@@ -90,3 +90,13 @@ test('admin can remove a vote; wrong token or GET is 404', async () => {
   assert.equal((await del(TOKEN, 'nobody')).status, 303);
   assert.match(await (await fetch(`${BASE}/admin/${TOKEN}`)).text(), /3 voters/);
 });
+
+test('vote page busts asset cache and is not cached itself', async () => {
+  const r = await fetch(BASE + '/');
+  assert.equal(r.headers.get('cache-control'), 'no-cache');
+  const html = await r.text();
+  assert.match(html, /\/app\.js\?v=[0-9a-f]{10}"/);
+  assert.match(html, /\/style\.css\?v=[0-9a-f]{10}"/);
+  const v = html.match(/app\.js\?v=([0-9a-f]+)/)[1];
+  assert.equal((await fetch(`${BASE}/app.js?v=${v}`)).status, 200);
+});

@@ -66,9 +66,13 @@ function tokenOk(given) {
   return crypto.timingSafeEqual(h(given), h(want));
 }
 
+// Content hash for cache busting: browsers cache static files for an hour, so a deploy
+// must change the asset URLs or old JS/CSS gets paired with new HTML.
+const V = crypto.createHash('sha1').update(['app.js', 'style.css'].map((f) => fs.readFileSync(path.join(__dirname, 'public', f))).join('')).digest('hex').slice(0, 10);
+
 const page = (title, body) => `<!doctype html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(title)}</title>
-<link rel="icon" href="/kodara.svg"><link rel="stylesheet" href="/style.css"></head><body>
+<link rel="icon" href="/kodara.svg"><link rel="stylesheet" href="/style.css?v=${V}"></head><body>
 <header><img src="/kodara.svg" alt="Kodara" class="logo"></header>${body}</body></html>`;
 
 const ZOOM_ICON = '<svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M15.5 15.5 21 21M10.5 7.5v6M7.5 10.5h6"/></svg>';
@@ -86,7 +90,7 @@ ${cards}
 <p id="err" class="err" hidden></p></form></main>
 <main id="thanks" hidden><h1>Thanks, your vote is in.</h1><p class="sub">You can close this page.</p></main>
 <dialog id="lightbox" aria-label="Product image"><img alt=""><button type="button" class="close" aria-label="Close">&times;</button></dialog>
-<script src="/app.js"></script>`);
+<script src="/app.js?v=${V}"></script>`);
 }
 
 async function adminPage(store, token) {
@@ -130,7 +134,7 @@ async function main() {
     try {
       const url = new URL(req.url, 'http://x');
       const p = url.pathname;
-      if (req.method === 'GET' && p === '/') return send(res, 200, votePage());
+      if (req.method === 'GET' && p === '/') return send(res, 200, votePage(), undefined, { 'Cache-Control': 'no-cache' });
       if (req.method === 'GET' && p === '/healthz') return send(res, 200, 'ok', 'text/plain');
       if (req.method === 'POST' && p === '/api/vote') {
         let b;

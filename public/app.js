@@ -46,7 +46,7 @@ f.addEventListener('click', (e) => {
   lbImg.src = img.src;
   lbImg.alt = img.alt;
   opener = btn;
-  lb.showModal();
+  if (lb.showModal) lb.showModal(); else lb.setAttribute('open', ''); // iOS < 15.4 has no showModal
 });
-lb.addEventListener('click', (e) => { if (e.target !== lbImg) lb.close(); });
+lb.addEventListener('click', (e) => { if (e.target !== lbImg) lb.close ? lb.close() : (lb.removeAttribute('open'), opener && opener.focus()); });
 lb.addEventListener('close', () => opener && opener.focus());
