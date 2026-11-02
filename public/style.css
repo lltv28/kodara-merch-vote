@@ -16,8 +16,7 @@ h2 { font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.08em; colo
 @media (min-width: 900px) { .grid { grid-template-columns: repeat(4, 1fr); } }
 .card { -webkit-tap-highlight-color: transparent; position: relative; display: flex; flex-direction: column; background: #fff; border: 2px solid var(--line); border-radius: 12px; overflow: hidden; cursor: pointer; transition: border-color .15s; }
 .card img { width: 100%; aspect-ratio: 1; object-fit: contain; background: var(--tile); }
-.card .name { padding: 10px 12px 0; font-weight: 600; font-size: 0.92rem; line-height: 1.25; }
-.card .price { padding: 2px 12px 12px; color: var(--muted); font-size: 0.9rem; }
+.card .name { padding: 10px 12px 12px; font-weight: 600; font-size: 0.92rem; line-height: 1.25; }
 .card input { position: absolute; top: 10px; right: 10px; width: 22px; height: 22px; accent-color: var(--green); margin: 0; }
 .card:has(input:checked) { border-color: var(--green); }
 .card:has(input:disabled) { opacity: 0.5; cursor: not-allowed; }

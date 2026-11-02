@@ -4,21 +4,21 @@ const path = require('path');
 const crypto = require('crypto');
 
 const ITEMS = [
-  ['lulu-smooth-spacer', 'Hoodies', 'Lululemon Smooth Spacer', 140],
-  ['lulu-steady-state', 'Hoodies', 'Lululemon Steady State', 130],
-  ['asc-heavy-zip', 'Hoodies', 'AS Colour Heavy Zip Hood', 45],
-  ['asc-box-minus', 'Hoodies', 'AS Colour Box Minus', 45],
-  ['bb13-perfect-hoodie', 'Hoodies', 'Blanks by 13 Perfect Hoodie', 65],
-  ['lulu-fundamental', 'T-shirts', 'Lululemon The Fundamental', 60],
-  ['lulu-everyday-classic', 'T-shirts', 'Lululemon Everyday Classic', 60],
-  ['asc-classic-minus', 'T-shirts', 'AS Colour Classic Minus', 25],
-  ['asc-heavy-faded', 'T-shirts', 'AS Colour Heavy Faded', 25],
-  ['fellow-carter', 'Tumblers', 'Fellow Carter Move Mug', 50],
-  ['stanley-transit', 'Tumblers', 'Stanley Transit Flip Top', 50],
-  ['yeti-rambler', 'Tumblers', 'Yeti Rambler 20oz', 55],
-  ['richardson-gramps', 'Hats', 'Richardson 256 Gramps', 25],
-  ['47-clean-up', 'Hats', "'47 Brand Clean Up Cap", 20],
-].map(([id, category, name, price]) => ({ id, category, name, price }));
+  ['lulu-smooth-spacer', 'Hoodies', 'Lululemon Smooth Spacer'],
+  ['lulu-steady-state', 'Hoodies', 'Lululemon Steady State'],
+  ['asc-heavy-zip', 'Hoodies', 'AS Colour Heavy Zip Hood'],
+  ['asc-box-minus', 'Hoodies', 'AS Colour Box Minus'],
+  ['bb13-perfect-hoodie', 'Hoodies', 'Blanks by 13 Perfect Hoodie'],
+  ['lulu-fundamental', 'T-shirts', 'Lululemon The Fundamental'],
+  ['lulu-everyday-classic', 'T-shirts', 'Lululemon Everyday Classic'],
+  ['asc-classic-minus', 'T-shirts', 'AS Colour Classic Minus'],
+  ['asc-heavy-faded', 'T-shirts', 'AS Colour Heavy Faded'],
+  ['fellow-carter', 'Tumblers', 'Fellow Carter Move Mug'],
+  ['stanley-transit', 'Tumblers', 'Stanley Transit Flip Top'],
+  ['yeti-rambler', 'Tumblers', 'Yeti Rambler 20oz'],
+  ['richardson-gramps', 'Hats', 'Richardson 256 Gramps'],
+  ['47-clean-up', 'Hats', "'47 Brand Clean Up Cap"],
+].map(([id, category, name]) => ({ id, category, name }));
 const BY_ID = Object.fromEntries(ITEMS.map((i) => [i.id, i]));
 const CATEGORIES = [...new Set(ITEMS.map((i) => i.category))];
 
@@ -80,7 +80,7 @@ const ZOOM_ICON = '<svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="
 function votePage() {
   const cards = CATEGORIES.map((c) => `<h2>${esc(c)}</h2><div class="grid">${ITEMS.filter((i) => i.category === c).map((i) => `
 <label class="card"><input type="checkbox" name="items" value="${i.id}">
-<span class="media"><img src="/img/${i.id}.jpg" alt="${esc(i.name)}" loading="lazy"><button type="button" class="zoom" aria-label="View larger">${ZOOM_ICON}</button></span><span class="name">${esc(i.name)}</span><span class="price">$${i.price}</span></label>`).join('')}</div>`).join('');
+<span class="media"><img src="/img/${i.id}.jpg" alt="${esc(i.name)}" loading="lazy"><button type="button" class="zoom" aria-label="View larger">${ZOOM_ICON}</button></span><span class="name">${esc(i.name)}</span></label>`).join('')}</div>`).join('');
   return page('Kodara merch vote', `<main id="vote">
 <h1>Pick your top 2 Kodara merch items</h1>
 <p class="sub">Choose exactly 2. If you vote again, your new picks replace the old ones.</p>

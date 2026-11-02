@@ -100,3 +100,7 @@ test('vote page busts asset cache and is not cached itself', async () => {
   const v = html.match(/app\.js\?v=([0-9a-f]+)/)[1];
   assert.equal((await fetch(`${BASE}/app.js?v=${v}`)).status, 200);
 });
+
+test('no prices on the vote page', async () => {
+  assert.doesNotMatch(await (await fetch(BASE + '/')).text(), /\$\d|class="price"/);
+});
