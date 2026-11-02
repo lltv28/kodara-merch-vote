@@ -23,7 +23,7 @@ const BY_ID = Object.fromEntries(ITEMS.map((i) => [i.id, i]));
 const CATEGORIES = [...new Set(ITEMS.map((i) => i.category))];
 
 // Storage: Postgres when DATABASE_URL is set, else a local JSON file (dev only).
-// Each store exposes upsert(key, name, items) and all() -> [{name, items, created_at}].
+// Each store exposes upsert(key, name, items), remove(key) and all() -> [{name_key, name, items, created_at}].
 async function makeStore() {
   if (process.env.DATABASE_URL) {
     const { Pool } = require('pg');
@@ -35,7 +35,8 @@ async function makeStore() {
       upsert: (key, name, items) => pool.query(
         `INSERT INTO votes (name_key, name, items) VALUES ($1, $2, $3)
          ON CONFLICT (name_key) DO UPDATE SET name = $2, items = $3, created_at = now()`, [key, name, items]),
-      all: async () => (await pool.query('SELECT name, items, created_at FROM votes ORDER BY created_at DESC')).rows,
+      remove: (key) => pool.query('DELETE FROM votes WHERE name_key = $1', [key]),
+      all: async () => (await pool.query('SELECT name_key, name, items, created_at FROM votes ORDER BY created_at DESC')).rows,
     };
   }
   const file = process.env.VOTES_FILE || path.join(__dirname, 'votes.json');
@@ -46,7 +47,12 @@ async function makeStore() {
       db[key] = { name, items, created_at: new Date().toISOString() };
       fs.writeFileSync(file, JSON.stringify(db, null, 2));
     },
-    all: async () => Object.values(read()).sort((a, b) => b.created_at.localeCompare(a.created_at)),
+    remove: async (key) => {
+      const db = read();
+      delete db[key];
+      fs.writeFileSync(file, JSON.stringify(db, null, 2));
+    },
+    all: async () => Object.entries(read()).map(([name_key, v]) => ({ name_key, ...v })).sort((a, b) => b.created_at.localeCompare(a.created_at)),
   };
 }
 
@@ -89,10 +95,10 @@ async function adminPage(store, token) {
   for (const v of votes) for (const id of v.items) if (id in totals) totals[id]++;
   const groups = CATEGORIES.map((c) => `<h2>${esc(c)}</h2><table>${ITEMS.filter((i) => i.category === c)
     .sort((a, b) => totals[b.id] - totals[a.id]).map((i) => `<tr><td>${esc(i.name)}</td><td class="num">${totals[i.id]}</td></tr>`).join('')}</table>`).join('');
-  const rows = votes.map((v) => `<tr><td>${esc(v.name)}</td><td>${v.items.map((id) => esc(BY_ID[id]?.name ?? id)).join('<br>')}</td><td>${esc(new Date(v.created_at).toISOString().replace('T', ' ').slice(0, 16))} UTC</td></tr>`).join('');
+  const rows = votes.map((v) => `<tr><td>${esc(v.name)}</td><td>${v.items.map((id) => esc(BY_ID[id]?.name ?? id)).join('<br>')}</td><td>${esc(new Date(v.created_at).toISOString().replace('T', ' ').slice(0, 16))} UTC</td><td><form method="post" action="/admin/${encodeURIComponent(token)}/delete" onsubmit="return confirm('Remove this vote?')"><input type="hidden" name="name_key" value="${esc(v.name_key)}"><button class="remove">Remove</button></form></td></tr>`).join('');
   return page('Kodara merch results', `<main class="admin"><h1>Results</h1>
 <p class="sub">${votes.length} ${votes.length === 1 ? 'voter' : 'voters'}. <a href="/admin/${encodeURIComponent(token)}/votes.csv">Download CSV</a></p>
-${groups}<h2>Votes</h2><table><tr><th>Name</th><th>Picks</th><th>Time</th></tr>${rows}</table></main>`);
+${groups}<h2>Votes</h2><table><tr><th>Name</th><th>Picks</th><th>Time</th><th></th></tr>${rows}</table></main>`);
 }
 
 async function csv(store) {
@@ -103,11 +109,11 @@ async function csv(store) {
 
 const STATIC = { '.css': 'text/css', '.js': 'text/javascript', '.svg': 'image/svg+xml', '.jpg': 'image/jpeg' };
 
-function readJson(req) {
+function readBody(req) {
   return new Promise((resolve, reject) => {
     let body = '';
     req.on('data', (c) => { body += c; if (body.length > 10000) req.destroy(); });
-    req.on('end', () => { try { resolve(JSON.parse(body)); } catch (e) { reject(e); } });
+    req.on('end', () => resolve(body));
     req.on('error', reject);
   });
 }
@@ -128,13 +134,22 @@ async function main() {
       if (req.method === 'GET' && p === '/healthz') return send(res, 200, 'ok', 'text/plain');
       if (req.method === 'POST' && p === '/api/vote') {
         let b;
-        try { b = await readJson(req); } catch { return send(res, 400, '{"error":"Bad request"}', 'application/json'); }
+        try { b = JSON.parse(await readBody(req)); } catch { return send(res, 400, '{"error":"Bad request"}', 'application/json'); }
         const name = typeof b.name === 'string' ? b.name.trim().replace(/\s+/g, ' ') : '';
         const items = Array.isArray(b.items) ? [...new Set(b.items)] : [];
         if (!name || name.length > 100) return send(res, 400, '{"error":"Please enter your name."}', 'application/json');
         if (items.length !== 2 || !items.every((id) => id in BY_ID)) return send(res, 400, '{"error":"Pick exactly 2 items."}', 'application/json');
         await store.upsert(nameKey(name), name, items);
         return send(res, 200, '{"ok":true}', 'application/json');
+      }
+      const d = p.match(/^\/admin\/([^/]+)\/delete$/);
+      if (req.method === 'POST' && d) {
+        let token;
+        try { token = decodeURIComponent(d[1]); } catch { return notFound(res); }
+        if (!tokenOk(token)) return notFound(res);
+        const key = new URLSearchParams(await readBody(req)).get('name_key');
+        if (key) await store.remove(key);
+        return send(res, 303, '', 'text/plain', { Location: `/admin/${encodeURIComponent(token)}` });
       }
       const m = p.match(/^\/admin\/([^/]+)(\/votes\.csv)?$/);
       if (req.method === 'GET' && m) {

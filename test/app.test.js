@@ -70,3 +70,23 @@ test('no tally leak on public routes', async () => {
     assert.equal(r.status, 404, p);
   }
 });
+
+test('admin can remove a vote; wrong token or GET is 404', async () => {
+  const del = (token, key) => fetch(`${BASE}/admin/${token}/delete`, { method: 'POST', redirect: 'manual', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ name_key: key }) });
+  await vote('Del Me', ['asc-heavy-faded', 'asc-heavy-zip']);
+  let html = await (await fetch(`${BASE}/admin/${TOKEN}`)).text();
+  assert.match(html, /name="name_key" value="del me"/);
+  assert.match(html, /confirm\(/);
+  assert.equal((await del('wrong', 'del me')).status, 404);
+  assert.equal((await fetch(`${BASE}/admin/${TOKEN}/delete`)).status, 404);
+  const r = await del(TOKEN, 'del me');
+  assert.equal(r.status, 303);
+  assert.equal(r.headers.get('location'), `/admin/${TOKEN}`);
+  html = await (await fetch(`${BASE}/admin/${TOKEN}`)).text();
+  assert.doesNotMatch(html, /Del Me/);
+  assert.match(html, /AS Colour Heavy Faded<\/td><td class="num">0/);
+  assert.match(html, /3 voters/);
+  // removing an unknown key is a no-op
+  assert.equal((await del(TOKEN, 'nobody')).status, 303);
+  assert.match(await (await fetch(`${BASE}/admin/${TOKEN}`)).text(), /3 voters/);
+});
