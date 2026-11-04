@@ -21,9 +21,13 @@ const ITEMS = [
 ].map(([id, category, name]) => ({ id, category, name }));
 const BY_ID = Object.fromEntries(ITEMS.map((i) => [i.id, i]));
 const CATEGORIES = [...new Set(ITEMS.map((i) => i.category))];
+const SIZES = ['S', 'M', 'L', 'XL', '2XL', '3XL'];
+const HOODIE = 'AS Colour Box Minus Hood';
+const HOODIE_COUNT = 20;
 
 // Storage: Postgres when DATABASE_URL is set, else a local JSON file (dev only).
-// Each store exposes upsert(key, name, items), remove(key) and all() -> [{name_key, name, items, created_at}].
+// Each store exposes upsert(key, name, items, size), remove(key) and all() -> [{name_key, name, items, size, created_at}].
+// upsert with items or size null keeps the stored value; a size-only record starts with no picks.
 async function makeStore() {
   if (process.env.DATABASE_URL) {
     const { Pool } = require('pg');
@@ -31,20 +35,23 @@ async function makeStore() {
     const pool = new Pool({ connectionString: process.env.DATABASE_URL, ssl: local ? false : { rejectUnauthorized: false } });
     await pool.query(`CREATE TABLE IF NOT EXISTS votes (
       name_key TEXT PRIMARY KEY, name TEXT NOT NULL, items TEXT[] NOT NULL, created_at TIMESTAMPTZ NOT NULL DEFAULT now())`);
+    await pool.query('ALTER TABLE votes ADD COLUMN IF NOT EXISTS size TEXT');
     return {
-      upsert: (key, name, items) => pool.query(
-        `INSERT INTO votes (name_key, name, items) VALUES ($1, $2, $3)
-         ON CONFLICT (name_key) DO UPDATE SET name = $2, items = $3, created_at = now()`, [key, name, items]),
+      upsert: (key, name, items, size) => pool.query(
+        `INSERT INTO votes (name_key, name, items, size) VALUES ($1, $2, COALESCE($3::text[], '{}'), $4)
+         ON CONFLICT (name_key) DO UPDATE SET name = $2, items = COALESCE($3::text[], votes.items), size = COALESCE($4, votes.size),
+           created_at = CASE WHEN $3::text[] IS NULL THEN votes.created_at ELSE now() END`, [key, name, items, size]),
       remove: (key) => pool.query('DELETE FROM votes WHERE name_key = $1', [key]),
-      all: async () => (await pool.query('SELECT name_key, name, items, created_at FROM votes ORDER BY created_at DESC')).rows,
+      all: async () => (await pool.query('SELECT name_key, name, items, size, created_at FROM votes ORDER BY created_at DESC')).rows,
     };
   }
   const file = process.env.VOTES_FILE || path.join(__dirname, 'votes.json');
   const read = () => { try { return JSON.parse(fs.readFileSync(file, 'utf8')); } catch { return {}; } };
   return {
-    upsert: async (key, name, items) => {
+    upsert: async (key, name, items, size) => {
       const db = read();
-      db[key] = { name, items, created_at: new Date().toISOString() };
+      const old = db[key];
+      db[key] = { name, items: items ?? old?.items ?? [], size: size ?? old?.size ?? null, created_at: items || !old ? new Date().toISOString() : old.created_at };
       fs.writeFileSync(file, JSON.stringify(db, null, 2));
     },
     remove: async (key) => {
@@ -82,13 +89,18 @@ function votePage() {
 <label class="card"><input type="checkbox" name="items" value="${i.id}">
 <span class="media"><img src="/img/${i.id}.jpg" alt="${esc(i.name)}" loading="lazy"><button type="button" class="zoom" aria-label="View larger">${ZOOM_ICON}</button></span><span class="name">${esc(i.name)}</span></label>`).join('')}</div>`).join('');
   return page('Kodara merch vote', `<main id="vote">
-<h1>Pick your top 2 Kodara merch items</h1>
-<p class="sub">Choose exactly 2. If you vote again, your new picks replace the old ones.</p>
+<h1>Pick your hoodie size</h1>
+<p class="sub">Already voted? Enter the same name and pick your size. Your vote stays as it is.</p>
 <form id="f"><label class="field">Your name<input id="name" name="name" required maxlength="100" autocomplete="name"></label>
+<fieldset class="sizes"><legend>${esc(HOODIE)} size</legend><div class="size-grid">${SIZES.map((s) => `
+<label class="size"><input type="radio" name="size" value="${s}"><span>${s}</span></label>`).join('')}</div>
+<p class="note">The '47 Brand Clean Up Cap is one size, adjustable.</p></fieldset>
+<h2 class="vote-head">Vote: your top 2 merch items</h2>
+<p class="sub">Optional if you already voted. Voting again replaces your old picks.</p>
 ${cards}
-<div class="bar"><span id="count">0 of 2 picked</span><button id="go" disabled>Submit vote</button></div>
+<div class="bar"><span id="count">0 of 2 picked</span><button id="go" disabled>Submit</button></div>
 <p id="err" class="err" hidden></p></form></main>
-<main id="thanks" hidden><h1>Thanks, your vote is in.</h1><p class="sub">You can close this page.</p></main>
+<main id="thanks" hidden><h1>Thanks, you're all set.</h1><p class="sub">You can close this page.</p></main>
 <dialog id="lightbox" aria-label="Product image"><img alt=""><button type="button" class="close" aria-label="Close">&times;</button></dialog>
 <script src="/app.js?v=${V}"></script>`);
 }
@@ -97,18 +109,31 @@ async function adminPage(store, token) {
   const votes = await store.all();
   const totals = Object.fromEntries(ITEMS.map((i) => [i.id, 0]));
   for (const v of votes) for (const id of v.items) if (id in totals) totals[id]++;
+  const voters = votes.filter((v) => v.items.length).length;
   const groups = CATEGORIES.map((c) => `<h2>${esc(c)}</h2><table>${ITEMS.filter((i) => i.category === c)
     .sort((a, b) => totals[b.id] - totals[a.id]).map((i) => `<tr><td>${esc(i.name)}</td><td class="num">${totals[i.id]}</td></tr>`).join('')}</table>`).join('');
-  const rows = votes.map((v) => `<tr><td>${esc(v.name)}</td><td>${v.items.map((id) => esc(BY_ID[id]?.name ?? id)).join('<br>')}</td><td>${esc(new Date(v.created_at).toISOString().replace('T', ' ').slice(0, 16))} UTC</td><td><form method="post" action="/admin/${encodeURIComponent(token)}/delete" onsubmit="return confirm('Remove this vote?')"><input type="hidden" name="name_key" value="${esc(v.name_key)}"><button class="remove">Remove</button></form></td></tr>`).join('');
+  const sized = votes.filter((v) => v.size);
+  const sizeRows = SIZES.map((s) => {
+    const who = sized.filter((v) => v.size === s);
+    return `<tr><td>${s}</td><td class="num">${who.length}</td><td>${who.map((v) => esc(v.name)).join(', ')}</td></tr>`;
+  }).join('');
+  const noSize = votes.filter((v) => !v.size).map((v) => esc(v.name)).join(', ') || 'Everyone has picked a size.';
+  const sizeSheet = `<h2>${esc(HOODIE)} size sheet</h2><table class="sizesheet"><tr><th>Size</th><th class="num">Count</th><th>Who</th></tr>${sizeRows}
+<tr class="total"><td>Total</td><td class="num">${sized.length}</td><td>of ${HOODIE_COUNT} hoodies</td></tr></table>
+<p class="sub">No size yet: ${noSize}</p>`;
+  const rows = votes.map((v) => `<tr><td>${esc(v.name)}</td><td>${v.items.map((id) => esc(BY_ID[id]?.name ?? id)).join('<br>') || '<span class="sub">No vote</span>'}</td><td>${esc(v.size || '')}</td><td>${esc(new Date(v.created_at).toISOString().replace('T', ' ').slice(0, 16))} UTC</td><td><form method="post" action="/admin/${encodeURIComponent(token)}/delete" onsubmit="return confirm('Remove this person?')"><input type="hidden" name="name_key" value="${esc(v.name_key)}"><button class="remove">Remove</button></form></td></tr>`).join('');
   return page('Kodara merch results', `<main class="admin"><h1>Results</h1>
-<p class="sub">${votes.length} ${votes.length === 1 ? 'voter' : 'voters'}. <a href="/admin/${encodeURIComponent(token)}/votes.csv">Download CSV</a></p>
-${groups}<h2>Votes</h2><table><tr><th>Name</th><th>Picks</th><th>Time</th><th></th></tr>${rows}</table></main>`);
+<p class="sub">${voters} ${voters === 1 ? 'voter' : 'voters'}. <a href="/admin/${encodeURIComponent(token)}/votes.csv">Download CSV</a></p>
+${sizeSheet}${groups}<h2>Votes</h2><table><tr><th>Name</th><th>Picks</th><th>Size</th><th>Time</th><th></th></tr>${rows}</table></main>`);
 }
 
 async function csv(store) {
   const q = (s) => `"${String(s).replace(/"/g, '""')}"`;
   const votes = await store.all();
-  return ['name,pick_1,pick_2,voted_at', ...votes.map((v) => [v.name, ...v.items.map((id) => BY_ID[id]?.name ?? id), new Date(v.created_at).toISOString()].map(q).join(','))].join('\n') + '\n';
+  return ['name,pick_1,pick_2,hoodie_size,voted_at', ...votes.map((v) => {
+    const [a = '', b = ''] = v.items.map((id) => BY_ID[id]?.name ?? id);
+    return [v.name, a, b, v.size || '', new Date(v.created_at).toISOString()].map(q).join(',');
+  })].join('\n') + '\n';
 }
 
 const STATIC = { '.css': 'text/css', '.js': 'text/javascript', '.svg': 'image/svg+xml', '.jpg': 'image/jpeg' };
@@ -140,10 +165,12 @@ async function main() {
         let b;
         try { b = JSON.parse(await readBody(req)); } catch { return send(res, 400, '{"error":"Bad request"}', 'application/json'); }
         const name = typeof b.name === 'string' ? b.name.trim().replace(/\s+/g, ' ') : '';
-        const items = Array.isArray(b.items) ? [...new Set(b.items)] : [];
+        const items = Array.isArray(b.items) && b.items.length ? [...new Set(b.items)] : null;
+        const size = b.size == null || b.size === '' ? null : b.size;
         if (!name || name.length > 100) return send(res, 400, '{"error":"Please enter your name."}', 'application/json');
-        if (items.length !== 2 || !items.every((id) => id in BY_ID)) return send(res, 400, '{"error":"Pick exactly 2 items."}', 'application/json');
-        await store.upsert(nameKey(name), name, items);
+        if (size !== null && !SIZES.includes(size)) return send(res, 400, '{"error":"Pick a hoodie size."}', 'application/json');
+        if (items ? items.length !== 2 || !items.every((id) => id in BY_ID) : !size) return send(res, 400, '{"error":"Pick exactly 2 items."}', 'application/json');
+        await store.upsert(nameKey(name), name, items, size);
         return send(res, 200, '{"ok":true}', 'application/json');
       }
       const d = p.match(/^\/admin\/([^/]+)\/delete$/);

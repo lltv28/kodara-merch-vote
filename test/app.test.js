@@ -23,7 +23,7 @@ before(async () => {
 });
 after(() => { srv.kill(); fs.rmSync(votesFile, { force: true }); });
 
-const vote = (name, items) => fetch(BASE + '/api/vote', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, items }) });
+const vote = (name, items, size) => fetch(BASE + '/api/vote', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, items, size }) });
 
 test('healthz', async () => assert.equal(await (await fetch(BASE + '/healthz')).text(), 'ok'));
 
@@ -53,7 +53,7 @@ test('re-vote replaces, admin totals correct, csv', async () => {
   assert.ok(html.indexOf('Yeti Rambler 20oz') < html.indexOf('Fellow Carter Move Mug'));
   const csv = await (await fetch(`${BASE}/admin/${TOKEN}/votes.csv`)).text();
   assert.equal(csv.trim().split('\n').length, 4);
-  assert.match(csv, /"jane DOE","Yeti Rambler 20oz","'47 Brand Clean Up Cap"/);
+  assert.match(csv, /"jane DOE","Yeti Rambler 20oz","'47 Brand Clean Up Cap","",/);
 });
 
 test('wrong token is 404', async () => {
@@ -103,4 +103,47 @@ test('vote page busts asset cache and is not cached itself', async () => {
 
 test('no prices on the vote page', async () => {
   assert.doesNotMatch(await (await fetch(BASE + '/')).text(), /\$\d|class="price"/);
+});
+
+test('hoodie size: save, update by same name without re-voting, admin sheet, csv', async () => {
+  const admin = async () => (await fetch(`${BASE}/admin/${TOKEN}`)).text();
+  const count = (html, s) => Number(html.match(new RegExp(`<tr><td>${s}</td><td class="num">(\\d+)`))[1]);
+  assert.equal((await vote('Sizer', [], 'XXL')).status, 400);
+  assert.equal((await vote('Sizer', [])).status, 400);
+  // size with a fresh vote
+  assert.equal((await vote('Sizer', ['asc-box-minus', '47-clean-up'], 'M')).status, 200);
+  let html = await admin();
+  assert.equal(count(html, 'M'), 1);
+  // same name, size only: vote kept, size changed, no duplicate
+  assert.equal((await vote('  sizer ', [], '2XL')).status, 200);
+  html = await admin();
+  assert.equal(count(html, 'M'), 0);
+  assert.equal(count(html, '2XL'), 1);
+  assert.match(html, /AS Colour Box Minus<\/td><td class="num">1/);
+  assert.equal(html.match(/value="sizer"/g).length, 1);
+  // re-vote without a size keeps the size
+  await vote('Sizer', ['yeti-rambler', '47-clean-up']);
+  html = await admin();
+  assert.equal(count(html, '2XL'), 1);
+  assert.match(html, /AS Colour Box Minus<\/td><td class="num">0/);
+  // size-only newcomer is listed but not counted as a voter
+  const before = Number(html.match(/(\d+) voters/)[1]);
+  assert.equal((await vote('Newbie', undefined, 'S')).status, 200);
+  html = await admin();
+  assert.equal(Number(html.match(/(\d+) voters/)[1]), before);
+  assert.match(html, /<tr><td>S<\/td><td class="num">1<\/td><td>Newbie<\/td>/);
+  assert.match(html, /Total<\/td><td class="num">2<\/td><td>of 20 hoodies/);
+  assert.match(html, /No size yet: [^<]*Bob/);
+  assert.doesNotMatch(html.match(/No size yet: [^<]*/)[0], /Sizer|Newbie/);
+  const csv = await (await fetch(`${BASE}/admin/${TOKEN}/votes.csv`)).text();
+  assert.match(csv, /^name,pick_1,pick_2,hoodie_size,voted_at/);
+  assert.match(csv, /"Sizer","Yeti Rambler 20oz","'47 Brand Clean Up Cap","2XL",/);
+  assert.match(csv, /"Newbie","","","S",/);
+});
+
+test('vote page has size picker and cap note', async () => {
+  const html = await (await fetch(BASE + '/')).text();
+  for (const s of ['S', 'M', 'L', 'XL', '2XL', '3XL']) assert.match(html, new RegExp(`name="size" value="${s}"`));
+  assert.match(html, /AS Colour Box Minus Hood/);
+  assert.match(html, /one size, adjustable/);
 });
