@@ -136,7 +136,7 @@ test('hoodie size: save, update by same name without re-voting, admin sheet, csv
   assert.match(html, /No size yet: [^<]*Bob/);
   assert.doesNotMatch(html.match(/No size yet: [^<]*/)[0], /Sizer|Newbie/);
   const csv = await (await fetch(`${BASE}/admin/${TOKEN}/votes.csv`)).text();
-  assert.match(csv, /^name,pick_1,pick_2,hoodie_size,voted_at/);
+  assert.match(csv, /^name,pick_1,pick_2,hoodie_size,street,apt,city,state,zip,country,phone,hood_color,cap_color,voted_at/);
   assert.match(csv, /"Sizer","Yeti Rambler 20oz","'47 Brand Clean Up Cap","2XL",/);
   assert.match(csv, /"Newbie","","","S",/);
 });
@@ -166,4 +166,64 @@ test('size-only submit works for a new name; admin shows winners first, rest col
   assert.match(html.slice(w, d), /AS Colour Box Minus Hood<\/td><td class="num">\d+/);
   assert.match(html.slice(w, d), /&#39;47 Brand Clean Up Cap<\/td><td class="num">\d+/);
   assert.doesNotMatch(html.slice(w, d), /Yeti|Lululemon/);
+});
+
+const post = (body) => fetch(BASE + '/api/vote', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+const ADDR = { street: '123 Fake St', apt: 'Unit 9', city: 'Springfield', state: 'OR', zip: '97477', country: 'United States', phone: '555-0100' };
+
+test('shipping + colors: required fields, save, update by same name, admin, csv, color tally', async () => {
+  // required shipping fields once any info is sent
+  for (const k of ['street', 'city', 'state', 'zip', 'country']) {
+    const r = await post({ name: 'Shipper', size: 'M', ...ADDR, [k]: '  ' });
+    assert.equal(r.status, 400, k);
+    assert.doesNotMatch(await r.text(), /Fake|Springfield|97477/);
+  }
+  assert.equal((await post({ name: 'Shipper', size: 'M', ...ADDR, street: 'x'.repeat(201) })).status, 400);
+  assert.equal((await post({ name: 'Shipper', size: 'M', ...ADDR, hood_color: 'x'.repeat(61) })).status, 400);
+  // optional apt/phone/colors may be blank
+  const ok = await post({ name: 'Shipper', size: 'M', ...ADDR, apt: '', phone: '', hood_color: '  Black ', cap_color: '' });
+  assert.equal(ok.status, 200);
+  assert.equal(await ok.text(), '{"ok":true}');
+  // same name updates everything, no duplicate
+  assert.equal((await post({ name: ' shipper ', size: 'L', ...ADDR, street: '9 New Rd', hood_color: 'Ink Blue', cap_color: 'Navy' })).status, 200);
+  await post({ name: 'Other', size: 'S', ...ADDR, hood_color: 'black', cap_color: 'NAVY' });
+  await post({ name: 'Third', size: 'S', ...ADDR, hood_color: 'BLACK' });
+  const html = await (await fetch(`${BASE}/admin/${TOKEN}`)).text();
+  assert.equal(html.match(/value="shipper"/g).length, 1);
+  assert.match(html, /9 New Rd<br>Unit 9<br>Springfield, OR 97477<br>United States/);
+  assert.match(html, /<td>Shipper<\/td>[^]*?<td>L<\/td><td>Ink Blue<\/td><td>Navy<\/td>/i);
+  const colors = html.slice(html.indexOf('Color preferences'), html.indexOf('<details'));
+  assert.match(colors, /<tr><td>black<\/td><td class="num">2<\/td><\/tr>/i); // black + BLACK grouped; Shipper moved to Ink Blue
+  assert.match(colors, /<tr><td>Navy<\/td><td class="num">2<\/td><\/tr>/i);
+  assert.match(colors, /<tr><td>Ink Blue<\/td><td class="num">1<\/td><\/tr>/);
+  // size-only call (no info fields) keeps stored shipping
+  assert.equal((await post({ name: 'Shipper', size: 'XL' })).status, 200);
+  const csv = await (await fetch(`${BASE}/admin/${TOKEN}/votes.csv`)).text();
+  assert.match(csv, /"Shipper","","","XL","9 New Rd","Unit 9","Springfield","OR","97477","United States","555-0100","Ink Blue","Navy",/);
+});
+
+test('shipping data never on public routes', async () => {
+  await post({ name: 'Private Pat', size: 'M', ...ADDR, street: '42 Secret Ln', zip: '00042', phone: '555-4242' });
+  const leak = /42 Secret Ln|00042|555-4242|Private Pat/;
+  for (const p of ['/', '/api/vote', '/votes.json', '/admin', '/admin/wrong', '/admin/wrong/votes.csv', '/app.js', '/style.css']) {
+    assert.doesNotMatch(await (await fetch(BASE + p)).text(), leak, p);
+  }
+  for (const body of [{ name: 'Private Pat', size: 'M', ...ADDR, street: '42 Secret Ln' }, { name: 'Private Pat', size: 'nope', street: '42 Secret Ln' }]) {
+    assert.doesNotMatch(await (await post(body)).text(), leak);
+  }
+});
+
+test('vote page has shipping fields with autocomplete, color inputs, privacy line', async () => {
+  const html = await (await fetch(BASE + '/')).text();
+  for (const [n, ac, req] of [['street', 'address-line1', 1], ['apt', 'address-line2', 0], ['city', 'address-level2', 1], ['state', 'address-level1', 1], ['zip', 'postal-code', 1], ['country', 'country-name', 1], ['phone', 'tel', 0]]) {
+    const tag = html.match(new RegExp(`<input name="${n}"[^>]*>`))[0];
+    assert.match(tag, new RegExp(`autocomplete="${ac}"`), n);
+    assert.equal(/ required/.test(tag), !!req, n);
+  }
+  assert.match(html, /<input name="country"[^>]*value="United States"/);
+  assert.ok(html.indexOf('name="name"') < html.indexOf('name="street"'));
+  assert.equal((html.match(/Color preference \(optional\)/g) || []).length, 2);
+  assert.match(html, /name="hood_color" maxlength="60" placeholder="[^"]+"[^>]*><span class="hint">[^<]*Athletic Heather/);
+  assert.match(html, /name="cap_color" maxlength="60"/);
+  assert.match(html, /Only used to ship your merch\./);
 });

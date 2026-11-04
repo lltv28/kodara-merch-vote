@@ -2,12 +2,11 @@ const f = document.getElementById('f');
 const go = document.getElementById('go');
 const count = document.getElementById('count');
 const err = document.getElementById('err');
-const nameEl = document.getElementById('name');
 const size = () => f.querySelector('input[name=size]:checked')?.value || '';
 
 function update() {
   count.textContent = size() ? `Size ${size()}` : 'Pick a size';
-  go.disabled = !(nameEl.value.trim() && size());
+  go.disabled = !(size() && f.checkValidity());
 }
 f.addEventListener('input', update);
 update();
@@ -20,7 +19,7 @@ f.addEventListener('submit', async (e) => {
     const r = await fetch('/api/vote', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name: nameEl.value, size: size() }),
+      body: JSON.stringify(Object.fromEntries(new FormData(f))),
     });
     if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || 'Something went wrong. Try again.');
     document.getElementById('vote').hidden = true;
