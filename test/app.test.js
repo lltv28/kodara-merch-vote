@@ -147,3 +147,23 @@ test('vote page has size picker and cap note', async () => {
   assert.match(html, /AS Colour Box Minus Hood/);
   assert.match(html, /one size, adjustable/);
 });
+
+test('vote page shows only the two winners, no pick UI', async () => {
+  const html = await (await fetch(BASE + '/')).text();
+  assert.equal((html.match(/class="card"/g) || []).length, 2);
+  assert.match(html, /What we're getting/);
+  assert.match(html, /src="\/img\/asc-box-minus\.jpg"/);
+  assert.match(html, /src="\/img\/47-clean-up\.jpg"/);
+  assert.equal((html.match(/class="zoom"/g) || []).length, 2);
+  assert.doesNotMatch(html, /name="items"|top 2|Yeti|Lululemon|Stanley|Richardson|Fellow|Blanks|Heavy|Classic Minus/);
+});
+
+test('size-only submit works for a new name; admin shows winners first, rest collapsed', async () => {
+  assert.equal((await vote('Only Size', undefined, 'L')).status, 200);
+  const html = await (await fetch(`${BASE}/admin/${TOKEN}`)).text();
+  const w = html.indexOf('<h2>Winners</h2>'), d = html.indexOf('<details class="final">');
+  assert.ok(html.indexOf('size sheet') < w && w < d && d < html.indexOf('Yeti Rambler 20oz'));
+  assert.match(html.slice(w, d), /AS Colour Box Minus Hood<\/td><td class="num">\d+/);
+  assert.match(html.slice(w, d), /&#39;47 Brand Clean Up Cap<\/td><td class="num">\d+/);
+  assert.doesNotMatch(html.slice(w, d), /Yeti|Lululemon/);
+});

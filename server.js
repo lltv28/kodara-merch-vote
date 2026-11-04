@@ -24,6 +24,8 @@ const CATEGORIES = [...new Set(ITEMS.map((i) => i.category))];
 const SIZES = ['S', 'M', 'L', 'XL', '2XL', '3XL'];
 const HOODIE = 'AS Colour Box Minus Hood';
 const HOODIE_COUNT = 20;
+// The vote is closed: these won and are what we're ordering. Display names match the vendor order.
+const WINNERS = [['asc-box-minus', HOODIE], ['47-clean-up', "'47 Brand Clean Up Cap"]];
 
 // Storage: Postgres when DATABASE_URL is set, else a local JSON file (dev only).
 // Each store exposes upsert(key, name, items, size), remove(key) and all() -> [{name_key, name, items, size, created_at}].
@@ -85,20 +87,18 @@ const page = (title, body) => `<!doctype html><html lang="en"><head><meta charse
 const ZOOM_ICON = '<svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M15.5 15.5 21 21M10.5 7.5v6M7.5 10.5h6"/></svg>';
 
 function votePage() {
-  const cards = CATEGORIES.map((c) => `<h2>${esc(c)}</h2><div class="grid">${ITEMS.filter((i) => i.category === c).map((i) => `
-<label class="card"><input type="checkbox" name="items" value="${i.id}">
-<span class="media"><img src="/img/${i.id}.jpg" alt="${esc(i.name)}" loading="lazy"><button type="button" class="zoom" aria-label="View larger">${ZOOM_ICON}</button></span><span class="name">${esc(i.name)}</span></label>`).join('')}</div>`).join('');
-  return page('Kodara merch vote', `<main id="vote">
+  const cards = WINNERS.map(([id, name]) => `
+<div class="card"><span class="media"><img src="/img/${id}.jpg" alt="${esc(name)}"><button type="button" class="zoom" aria-label="View larger">${ZOOM_ICON}</button></span><span class="name">${esc(name)}</span></div>`).join('');
+  return page('Kodara merch', `<main id="vote">
 <h1>Pick your hoodie size</h1>
-<p class="sub">Already voted? Enter the same name and pick your size. Your vote stays as it is.</p>
+<p class="sub">The vote is in. Enter your name and pick your hoodie size.</p>
 <form id="f"><label class="field">Your name<input id="name" name="name" required maxlength="100" autocomplete="name"></label>
 <fieldset class="sizes"><legend>${esc(HOODIE)} size</legend><div class="size-grid">${SIZES.map((s) => `
 <label class="size"><input type="radio" name="size" value="${s}"><span>${s}</span></label>`).join('')}</div>
 <p class="note">The '47 Brand Clean Up Cap is one size, adjustable.</p></fieldset>
-<h2 class="vote-head">Vote: your top 2 merch items</h2>
-<p class="sub">Optional if you already voted. Voting again replaces your old picks.</p>
-${cards}
-<div class="bar"><span id="count">0 of 2 picked</span><button id="go" disabled>Submit</button></div>
+<h2 class="vote-head">What we're getting</h2>
+<div class="grid winners">${cards}</div>
+<div class="bar"><span id="count">Pick a size</span><button id="go" disabled>Submit</button></div>
 <p id="err" class="err" hidden></p></form></main>
 <main id="thanks" hidden><h1>Thanks, you're all set.</h1><p class="sub">You can close this page.</p></main>
 <dialog id="lightbox" aria-label="Product image"><img alt=""><button type="button" class="close" aria-label="Close">&times;</button></dialog>
@@ -124,7 +124,8 @@ async function adminPage(store, token) {
   const rows = votes.map((v) => `<tr><td>${esc(v.name)}</td><td>${v.items.map((id) => esc(BY_ID[id]?.name ?? id)).join('<br>') || '<span class="sub">No vote</span>'}</td><td>${esc(v.size || '')}</td><td>${esc(new Date(v.created_at).toISOString().replace('T', ' ').slice(0, 16))} UTC</td><td><form method="post" action="/admin/${encodeURIComponent(token)}/delete" onsubmit="return confirm('Remove this person?')"><input type="hidden" name="name_key" value="${esc(v.name_key)}"><button class="remove">Remove</button></form></td></tr>`).join('');
   return page('Kodara merch results', `<main class="admin"><h1>Results</h1>
 <p class="sub">${voters} ${voters === 1 ? 'voter' : 'voters'}. <a href="/admin/${encodeURIComponent(token)}/votes.csv">Download CSV</a></p>
-${sizeSheet}${groups}<h2>Votes</h2><table><tr><th>Name</th><th>Picks</th><th>Size</th><th>Time</th><th></th></tr>${rows}</table></main>`);
+${sizeSheet}<h2>Winners</h2><table>${WINNERS.map(([id, name]) => `<tr><td>${esc(name)}</td><td class="num">${totals[id]}</td></tr>`).join('')}</table>
+<details class="final"><summary>Final vote, all items</summary>${groups}</details><h2>Votes</h2><table><tr><th>Name</th><th>Picks</th><th>Size</th><th>Time</th><th></th></tr>${rows}</table></main>`);
 }
 
 async function csv(store) {

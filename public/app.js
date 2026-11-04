@@ -3,16 +3,11 @@ const go = document.getElementById('go');
 const count = document.getElementById('count');
 const err = document.getElementById('err');
 const nameEl = document.getElementById('name');
-const boxes = [...f.querySelectorAll('input[name=items]')];
-
 const size = () => f.querySelector('input[name=size]:checked')?.value || '';
 
-// Submit needs a name plus 2 picks, a size, or both (returning voters can add just a size).
 function update() {
-  const n = boxes.filter((b) => b.checked).length;
-  boxes.forEach((b) => { b.disabled = n >= 2 && !b.checked; });
-  count.textContent = `${size() ? `Size ${size()}` : 'No size'} · ${n} of 2 picked`;
-  go.disabled = !(nameEl.value.trim() && (n === 2 || (n === 0 && size())));
+  count.textContent = size() ? `Size ${size()}` : 'Pick a size';
+  go.disabled = !(nameEl.value.trim() && size());
 }
 f.addEventListener('input', update);
 update();
@@ -25,7 +20,7 @@ f.addEventListener('submit', async (e) => {
     const r = await fetch('/api/vote', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name: nameEl.value, size: size(), items: boxes.filter((b) => b.checked).map((b) => b.value) }),
+      body: JSON.stringify({ name: nameEl.value, size: size() }),
     });
     if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || 'Something went wrong. Try again.');
     document.getElementById('vote').hidden = true;
@@ -44,8 +39,7 @@ let opener;
 f.addEventListener('click', (e) => {
   const btn = e.target.closest('.zoom');
   if (!btn) return;
-  e.preventDefault(); // keep the card's checkbox untouched
-  const img = btn.parentElement.querySelector('img');
+    const img = btn.parentElement.querySelector('img');
   lbImg.src = img.src;
   lbImg.alt = img.alt;
   opener = btn;
